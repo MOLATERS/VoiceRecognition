@@ -1,4 +1,6 @@
 import numpy as np
+import os
+import pickle
 import math
 import wave
 
@@ -18,7 +20,11 @@ def reverse_quantize_bit(signal,alpha,bit):
 
 def quantize_log(signal, a, min_val):
     signal -= (min_val-1)
-    return round(math.log(signal,a),5)
+    try:
+        return math.log(signal,a)
+    except:
+        print(f"error at {signal}, {a}, {min_val}")
+        quit()
 
 def reverse_log(signal, a, min_val):
     return np.power(a,signal) + min_val-1
@@ -36,7 +42,7 @@ def dpcm_encode(signal,a, bit, mod):
             continue
 
         if mod == 1:
-            diff = quantize_bit(sample - prediction,a,bit)  # 计算样本与预测值的差异
+            diff = quantize_bit(sample - prediction, a, bit)  # 计算样本与预测值的差异
         if mod == 2:
             diff = quantize_log(sample - prediction, a, min_val)
 
@@ -85,35 +91,44 @@ def calculate_snr(original_signal, decoded_signal):
     snr = 10 * np.log10(signal_power / noise_power)
     return snr
 
+def save_compressed_data(compressed_data, filename):
+    # 将压缩数据转换为4位的位数组
+    compressed_bits = np.packbits(np.array(compressed_data, dtype=np.int8))
+    compressed_bits = np.unpackbits(compressed_bits)[:len(compressed_data)*4]
+    # 将位数组保存到文件
+    with open(filename, 'wb') as file:
+        file.write(compressed_bits.tobytes())
+    print("压缩文件保存成功：", filename, os.path.getsize(filename)/1024)
+
 if __name__ == "__main__":
-    
-    filename = "voice/2.wav"
-    with wave.open(filename, 'rb') as f:
-        flen = f.getnframes()
-        f.setpos(44)
-        signal = np.frombuffer(f.readframes(flen - 44), dtype=np.int16)
-
-    result = []
-
-    a = 5
-    bit = 7
-    mod = 2
-
-# for a in range(5,200,5):
-    encoded_signal, min_val = dpcm_encode(signal,a,bit, mod)
-    decoded_signal = dpcm_decode(encoded_signal,a,bit,min_val, mod)
-    snr = calculate_SNR(signal, decoded_signal)
-    snr2 = calculate_snr(signal, decoded_signal)
-    result.append((a,snr,snr2))
-    print(snr,snr2)
-
-    output_filename = "output.dpc"
-    with wave.open(output_filename, 'wb') as f:
-        f.setnchannels(1)  # 单声道
-        f.setsampwidth(1)  # 16位
-        f.setframerate(44100)  # 采样率
-        f.writeframes(encoded_signal.tobytes())
+    for i in range (1,11):
+        filename =f"voice/{i}.wav"
+        with wave.open(filename, 'rb') as f:
+            flen = f.getnframes()
+            f.setpos(44)
+            signal = np.frombuffer(f.readframes(flen - 44), dtype=np.int16)
+        for mod in range(1,3):
+            for bit in {3,7}:
+                result = []
+                a = 75
+                if mod == 1:
+                    if bit == 3:
+                        name = "bit4"
+                    elif bit == 7:
+                        name = "bit8"
+                elif mod == 2:
+                    name = "log"
+                encoded_signal, min_val = dpcm_encode(signal,a,bit, mod)
+                decoded_signal = dpcm_decode(encoded_signal,a,bit,min_val, mod)
+                snr = calculate_SNR(signal, decoded_signal)
+                snr2 = calculate_snr(signal, decoded_signal)
+                result.append((a,snr,snr2))
+                print(snr,snr2)
+                output_filename = f"{name}/{name}_{i}.dpc"
+                save_compressed_data(encoded_signal,output_filename)
 
 
 
-    
+
+
+        
